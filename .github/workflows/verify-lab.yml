@@ -1,0 +1,68 @@
+name: Verify UCS 745 lab
+on:
+  push:
+    branches: [lab-bootstrap]
+    paths: [.github/workflows/verify-lab.yml]
+permissions:
+  contents: read
+jobs:
+  git-history:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push the local Git history and verify a fresh pull
+        run: |
+          set -euxo pipefail
+          git bundle verify temperature-converter.bundle
+          git fetch ./temperature-converter.bundle refs/heads/main:refs/heads/imported-main refs/heads/feature/precision:refs/heads/feature/precision refs/heads/feature/unit-label:refs/heads/feature/unit-label
+          git push origin refs/heads/imported-main:refs/heads/main refs/heads/feature/precision refs/heads/feature/unit-label
+          expected=$(git rev-parse imported-main)
+          mkdir "$RUNNER_TEMP/verify-pull"
+          cd "$RUNNER_TEMP/verify-pull"
+          git init -b main
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git pull --ff-only origin main
+          test "$(git rev-parse HEAD)" = "$expected"
+          git show -s --format='%h %P %s' HEAD
+          python3 converter.py 37
+  amazon-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run account and archive operations inside Amazon Linux 2023
+        run: |
+          docker run --rm -i public.ecr.aws/amazonlinux/amazonlinux:2023 bash -se <<'LAB'
+          dnf -q -y install shadow-utils zip unzip
+          set -euxo pipefail
+          source /etc/os-release
+          test "$ID:$VERSION_ID" = amzn:2023
+          printf 'Environment: %s\n' "$PRETTY_NAME"
+          groupadd developer
+          groupadd tester
+          for user in developer1 developer2 developer3; do useradd -m -g developer "$user"; done
+          for user in tester1 tester2; do useradd -m -g tester "$user"; done
+          id developer3
+          old_home=$(getent passwd developer3 | cut -d: -f6)
+          test -d "$old_home"
+          useradd -m -g developer developer4
+          id developer4
+          test "$(id -gn developer4)" = developer
+          getent passwd developer4
+          userdel -r developer3
+          if getent passwd developer3 || getent shadow developer3 || test -e "$old_home"; then exit 1; fi
+          printf 'Verified: developer3 absent from passwd and shadow, home removed.\n'
+          project=$(mktemp -d)/Hdfc_Bank-ClientApp
+          mkdir "$project"
+          cd "$project"
+          printf 'class ClientApp {}\n' > ClientApp.java
+          printf 'Sample project archive.\n' > README.txt
+          printf 'Disposable test fixture.\n' > obsolete-test.txt
+          zip Hdfc-Pack.zip ClientApp.java README.txt obsolete-test.txt
+          unzip -l Hdfc-Pack.zip
+          zip -d Hdfc-Pack.zip obsolete-test.txt
+          unzip -l Hdfc-Pack.zip
+          unzip -t Hdfc-Pack.zip
+          test "$(unzip -Z1 Hdfc-Pack.zip | LC_ALL=C sort)" = "$(printf 'ClientApp.java\nREADME.txt')"
+          printf 'Verified: obsolete-test.txt removed and archive integrity passed.\n'
+          LAB
