@@ -5,7 +5,7 @@ import argparse
 
 def format_fahrenheit(celsius: float) -> str:
     fahrenheit = celsius * 9 / 5 + 32
-    return str(fahrenheit)
+    return f"{fahrenheit:.2f}"
 
 
 def main() -> None:
